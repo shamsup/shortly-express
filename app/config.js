@@ -4,7 +4,8 @@ var knex = require('knex')({
   connection: {
     filename: path.join(__dirname, '../db/shortly.sqlite')
   },
-  useNullAsDefault: true
+  useNullAsDefault: true,
+  debug: true
 });
 var db = require('bookshelf')(knex);
 
@@ -39,6 +40,29 @@ db.knex.schema.hasTable('clicks').then(function(exists) {
 /************************************************************/
 // Add additional schema definitions below
 /************************************************************/
+
+db.knex.schema.hasTable('users').then(function(exists) {
+  if (!exists) {
+    db.knex.schema.createTable('users', function (link) {
+      link.increments('id').primary();
+      link.string('password', 100);
+      link.string('username', 255);
+    }).then(function (table) {
+      console.log('Created Table', table);
+    });
+  }
+});
+
+db.knex.schema.hasTable('sessions').then(function(exists) {
+  if (!exists) {
+    db.knex.schema.createTable('sessions', function (link) {
+      link.string('uuid_session_id').primary();
+      link.integer('user_id').references('users.id');
+    }).then(function (table) {
+      console.log('Created Table', table);
+    });
+  }
+});
 
 
 module.exports = db;
