@@ -18,34 +18,38 @@ var app = express();
 app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
 app.use(partials());
+
 // Parse JSON (uniform resource locators)
 app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
+// username=Phillip&password=Phillip
+//req.body = { username: 'Phillip', password: 'Phillip' }
 // Parse cookie header into an object
 app.use(cookieParser());
 app.use(express.static(__dirname + '/public'));
 
 
 app.get('/', checkUser, function(req, res) {
-  res.render('index');
+  render(res, 'index', {user: req.user.username});
 });
 
 app.get('/login', function(req, res) {
-  res.render('login');
+  render(res, 'login');
 });
 
 app.get('/signup', function(req, res) {
-  res.render('signup');
+  render(res, 'signup');
 });
 
 
-app.get('/create', function(req, res) {
-  res.render('index');
+app.get('/create', checkUser, function(req, res) {
+  render(res, 'index', {user: req.user.username});
 });
 
-app.get('/links', function(req, res) {
-  Links.reset().fetch().then(function(links) {
+app.get('/links', checkUser, function(req, res) {
+  User.where('id', req.user.id).fetch({withRelated: ['links']}).then(function(user) {
+    var links = user.related('links');
     res.status(200).send(links.models);
   });
 });
@@ -57,11 +61,10 @@ app.post('/login', function(req, res) {
     if (user) {
       bcrypt.compare(req.body.password, user.get('password'), (err, isSame) => {
         if (err) {
-          console.log('Bcrypt error: ', err);
+          res.status(500);
+          render(res, 'login', { err: 'There was a problem processing your request' });
         }
         if (isSame) {
-          console.log('password matched');
-          // TODO: Create session
           new Session ({
             user_id: user.id
           }).save().then(function(session) {
@@ -70,21 +73,30 @@ app.post('/login', function(req, res) {
               'set-cookie': 'shortly_session=' + session.get('uuid_session_id')
             }).status(302).send();
           }).catch(function (err) {
+            // TODO: show an error in the template
             console.log('Error from session: ', err);
-            res.status(500).send();
+            res.status(500);
+            render(res, 'login', { error: 'There was a problem processing your request' });
           });
         } else {
+          // TODO: show an error in the template
           console.log('Password didnt match');
-          res.status(401).render('login');
+          res.status(401);
+          render(res, 'login', {error: 'Invalid login credentials'});
         }
       });
     } else {
+      // TODO: show an error in the template
       console.log('User not found');
-      res.status(401).render('login');
+      res.status(401);
+      render(res, 'login', {
+        error: 'Invalid login credentials'
+      });
     }
   }).catch(function(err) {
     console.log('Error: ', err);
-    res.status(500).send(err.message);
+    res.status(500);
+    render(res, 'login', {error: 'There was a problem processing your request'});
   });
 });
 
@@ -92,30 +104,49 @@ app.post('/login', function(req, res) {
 app.post('/signup', function(req, res) {
   User.where('username', req.body.username).fetch()
   .then(function(user) {
-    console.log('user: ', user);
     if (user) {
       // TODO: show an error in the template
-      res.status(400).render('signup');
+      res.status(400);
+      render(res, 'signup', { error: 'That username is unavailable' });
     } else {
       new User({
         username: req.body.username,
         password: req.body.password
       }).save()
-      .then(function(u){
-        console.log('user created: ', u);
-        res.set('location', '/login').status(302).send();
+      .then(function(user){
+        new Session ({
+          user_id: user.id
+        }).save().then(function(session) {
+          res.set({
+            location: '/',
+            'set-cookie': 'shortly_session=' + session.get('uuid_session_id')
+          }).status(302).send();
+        }).catch(function (err) {
+          console.log('Error from session: ', err);
+          res.status(500);
+          render(res, 'login', { error: 'There was a problem processing your request' });
+        });
       }).catch(function (err) {
         console.log('Error: ', err);
+        res.status(500);
+        render(res, 'signup', { error: 'There was a problem processing your request'})
       });
     }
   }).catch((err) => {
     console.log('error: ', err);
-    res.send(err.message);
+    res.status(500);
+    render(res, 'signup', {error: 'There was a problem processing your request'});
+  });
+});
+
+app.use('/logout', checkUser, function(req, res) {
+  Session.where('uuid_session_id', req.cookies.shortly_session).destroy().then(function(session) {
+      res.status(302).set('location', '/login').send();
   });
 });
 
 
-app.post('/links', function(req, res) {
+app.post('/links', checkUser, function(req, res) {
   var uri = req.body.url;
 
   if (!util.isValidUrl(uri)) {
@@ -125,7 +156,12 @@ app.post('/links', function(req, res) {
 
   new Link({ url: uri }).fetch().then(function(found) {
     if (found) {
-      res.status(200).send(found.attributes);
+      User.where('id', req.user.id).fetch()
+      .then(function(user) {
+        return user.links().attach(found);
+      }).then(function(user) {
+        res.status(200).send(found.attributes);
+      });
     } else {
       util.getUrlTitle(uri, function(err, title) {
         if (err) {
@@ -139,7 +175,12 @@ app.post('/links', function(req, res) {
           baseUrl: req.headers.origin
         })
         .then(function(newLink) {
-          res.status(200).send(newLink);
+          User.where('id', req.user.id).fetch()
+          .then(function (user) {
+            return user.links().attach(newLink);
+          }).then(function(user) {
+            res.status(200).send(newLink)
+          });
         });
       });
     }
@@ -151,6 +192,7 @@ app.post('/links', function(req, res) {
 /************************************************************/
 
 function checkUser(req, res, next) {
+  console.log(req.cookies);
   Session.where('uuid_session_id', req.cookies.shortly_session).fetch({withRelated: ['user']})
   .then(function (session) {
     if (session) {
@@ -161,11 +203,21 @@ function checkUser(req, res, next) {
       };
       next();
     } else {
-      res.status(401).render('login');
+      res.redirect('/login');
     }
   }).catch(function(err) {
     console.log('Session fetching error: ', err);
   });
+}
+
+function render(res, template, args) {
+  var defaults = {
+    user: '',
+    error: '',
+  };
+  args = args || {};
+  args = Object.assign({}, defaults, args);
+  res.render(template, args);
 }
 
 

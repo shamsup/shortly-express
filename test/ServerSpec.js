@@ -21,7 +21,10 @@ describe('', function() {
 
   beforeEach(function() {
     // log out currently signed in user
-    request('http://127.0.0.1:4568/logout', function(error, res, body) {});
+    request('http://127.0.0.1:4568/logout', function(error, res, body) {
+
+
+    });
 
     // delete link for roflzoo from db so it can be created later for the test
     db.knex('urls')
@@ -40,10 +43,10 @@ describe('', function() {
       .del()
       .catch(function(error) {
         // uncomment when writing authentication tests
-        // throw {
-        //   type: 'DatabaseError',
-        //   message: 'Failed to create test setup data'
-        // };
+        throw {
+          type: 'DatabaseError',
+          message: 'Failed to create test setup data'
+        };
       });
 
     // delete user Phillip from db so it can be created later for the test
@@ -52,37 +55,62 @@ describe('', function() {
       .del()
       .catch(function(error) {
         // uncomment when writing authentication tests
-        // throw {
-        //   type: 'DatabaseError',
-        //   message: 'Failed to create test setup data'
-        // };
+        throw {
+          type: 'DatabaseError',
+          message: 'Failed to create test setup data'
+        };
       });
   });
 
   describe('Link creation:', function() {
+    var j = request.jar();
+    var requestWithSession = request.defaults({jar: j});
 
-    var requestWithSession = request.defaults({jar: true});
+    requestWithSession({
+      method: 'POST',
+      followAllRedirects: true,
+      uri: 'http://127.0.0.1:4568/signup',
+      json: {
+        username: 'Phillip',
+        password: 'Phillip'
+      }
+    }, function(err, res, body) {
+
+    });
+
 
     beforeEach(function(done) {
       // create a user that we can then log-in with
-      new User({
-        'username': 'Phillip',
-        'password': 'Phillip'
-      }).save().then(function() {
-        var options = {
-          'method': 'POST',
-          'followAllRedirects': true,
-          'uri': 'http://127.0.0.1:4568/login',
-          'json': {
-            'username': 'Phillip',
-            'password': 'Phillip'
-          }
-        };
-        // login via form and save session info
-        requestWithSession(options, function(error, res, body) {
-          done();
-        });
+      requestWithSession({
+        method: 'POST',
+        followAllRedirects: true,
+        uri: 'http://127.0.0.1:4568/login',
+        json: {
+          username: 'Phillip',
+          password: 'Phillip'
+        }
+      }, function (err, res, body) {
+        console.log('Res: ', res, 'Body: ', body);
+        done();
       });
+      // new User({
+      //   'username': 'Phillip',
+      //   'password': 'Phillip'
+      // }).save().then(function() {
+        // var options = {
+        //   'method': 'POST',
+        //   'followAllRedirects': true,
+        //   'uri': 'http://127.0.0.1:4568/login',
+        //   'json': {
+        //     'username': 'Phillip',
+        //     'password': 'Phillip'
+        //   }
+        // };
+        // // login via form and save session info
+        // requestWithSession(options, function(error, res, body) {
+        //   done();
+        // });
+      // });
     });
 
     it('Only shortens valid urls, returning a 404 - Not found for invalid urls', function(done) {

@@ -7,7 +7,7 @@ var Link = require('./link');
 var User = db.Model.extend({
   tableName: 'users',
   links: function() {
-    return this.hasMany(Link);
+    return this.belongsToMany(Link, 'users_urls', 'user_id', 'url_id');
   },
   initialize: function(attributes) { // { username: ..., password: ...}
     this.on('creating', this.hashPassword, this);

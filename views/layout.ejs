@@ -15,6 +15,10 @@
 
   <body>
     <h1>Shortly</h1>
+    <% if (user !== '') { %>
+      <div class='welcome'>Hello, <%=user%>!</div>
+      <a class='logout' href='/logout'>Logout</a>
+    <% } %>
     <%- body %>
   </body>
 </html>
